@@ -7,9 +7,9 @@ local STATUS_PRECONDITION_REQUIRED = 428
 
 
 if ngx.var.query_string == nil then
-    ngx.log(ngx.WARN, "miss query_string.")
+    ngx.log(ngx.WARN, "Required parameter missing.")
     ngx.status = STATUS_PRECONDITION_REQUIRED
-    ngx.say("miss query_string.")
+    ngx.say("Required parameter missing.")
     ngx.exit(STATUS_PRECONDITION_REQUIRED)
     return
 end
@@ -43,8 +43,7 @@ for str in string.gmatch(ngx.var.query_string, "([^&]+)&?") do
 end
 
 if sign == nil or ts == nil or sign_v == nil then
-    -- 缺少必要的参数
-    local out = "缺少必要的签名参数sign=" .. safe_str(sign_v) .. 
+    local out = "Required parameter missing: sign=" .. safe_str(sign_v) .. 
                 ", ts=" .. safe_str(ts) .. 
                 ", sign_v=" .. safe_str(sign_v)
     ngx.log(ngx.WARN, out)
@@ -54,14 +53,14 @@ if sign == nil or ts == nil or sign_v == nil then
     return
 end
 
--- 时间戳有效性检测
--- local  = tonumber(ts)
--- if (os.time() - tonumber(ts)) > 5 * 60 then
---     ngx.log(ngx.WARN, "请求时间戳小于最小容忍时间范围5minutes")
---     ngx.status = ngx.HTTP_BAD_REQUEST
---     ngx.say("请求时间戳小于最小容忍时间范围5minutes")
---     ngx.exit(ngx.HTTP_BAD_REQUEST)
--- end
+-- Timestamp difference check
+local  = tonumber(ts)
+if (os.time() - tonumber(ts)) > 5 * 60 then
+    ngx.log(ngx.WARN, "The time difference should not be more than 5 minutes")
+    ngx.status = STATUS_PRECONDITION_REQUIRED
+    ngx.say("The time difference should not be more than 5 minutes")
+    ngx.exit(STATUS_PRECONDITION_REQUIRED)
+end
 
 table.sort(query_table)
 
@@ -77,14 +76,14 @@ end
 local secret = secret_table[sign_v]
 
 if secret == nil then
-    ngx.log(ngx.WARN, "不支持的签名版本:" .. sign_v);
+    ngx.log(ngx.WARN, "Unsupported signature version: " .. sign_v);
     ngx.status = STATUS_PRECONDITION_REQUIRED
-    ngx.say("不支持的签名版本:" .. sign_v)
+    ngx.say("Unsupported signature version: " .. sign_v)
     ngx.exit(STATUS_PRECONDITION_REQUIRED)
     return
 end
 
--- 签名算法：uri + sort(query_string) + md5(body)
+-- Signature algorithm：base64(hmac_sha1(secrect, uri + sort(query_string) + md5(body)))
 local sign_str = ngx.var.uri
 
 for k, v in ipairs(query_table) do
@@ -97,9 +96,9 @@ end
 
 local sign_by_server = ngx.encode_base64(ngx.hmac_sha1(secret, sign_str))
 if sign_by_server ~= sign then
-    ngx.log(ngx.WARN, "签名不匹配:sign_str=" .. sign_str.. ", client_sign=" .. sign .. ", server_sign=" .. sign_by_server);
+    ngx.log(ngx.WARN, "Signature verify failure: sign_str=" .. sign_str.. ", client_sign=" .. sign .. ", server_sign=" .. sign_by_server);
     ngx.status = STATUS_PRECONDITION_REQUIRED
-    ngx.say("签名不合法:"..sign_str)
+    ngx.say("Illegal signature: "..sign_str)
     ngx.exit(STATUS_PRECONDITION_REQUIRED)
     return
 end
