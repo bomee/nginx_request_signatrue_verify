@@ -6,13 +6,13 @@ local secret_table = {
     v5 = "OXO11FdNJ0Pgo1%8mOBtGm3DN!*ipdo0"
 }
 
-local STATUS_PRECONDITION_FAILED = 412
+local HTTP_PRECONDITION_FAILED = 412
 
 local function verify_fail(message)
     ngx.log(ngx.WARN, message)
-    -- ngx.status = STATUS_PRECONDITION_FAILED
-    -- ngx.say(message)
-    -- ngx.exit(STATUS_PRECONDITION_FAILED)
+    ngx.status = HTTP_PRECONDITION_FAILED
+    ngx.say(message)
+    ngx.exit(HTTP_PRECONDITION_FAILED)
     return
 end
 
@@ -22,34 +22,23 @@ end
 
 local function safe_str(value)
     if value == nil then 
-        return 'nil'
+        return ''
     else 
-        return value
+        return tostring(value)
     end
 end
 
--- Parse query_string to table for sort
-local query_table = {}
-local sign_ts = nil
-local sign = nil
-local sign_v = nil
-local qt_idx = 1
-for str in string.gmatch(ngx.var.query_string, "([^&]+)&?") do 
-    if string.find(str, "sign_ts=") then
-        sign_ts = string.gsub(str, "sign_ts=", "", 1)
-    elseif string.find(str, "sign=") then
-        sign = string.gsub(str, "sign=", "", 1)
-        goto next
-    elseif string.find(str, "sign_v=") then
-        sign_v = string.gsub(str, "sign_v=", "", 1)
-    end
-    query_table[qt_idx] = str
-    qt_idx = qt_idx + 1
-    ::next::
-end
+local uri_args = ngx.req.get_uri_args()
+local sign_ts = uri_args['sign_ts']
+local sign = uri_args['sign']
+local sign_v = uri_args['sign_v']
 
 if sign == nil or sign_ts == nil or sign_v == nil then
-    return verify_fail(out) 
+    return verify_fail(
+        "Required parameter missing: sign=" .. safe_str(sign) ..
+        ", sign_ts=" .. safe_str(sign_ts) ..
+        ", sign_v=" .. safe_str(sign_v)
+    ) 
 end
 
 -- Timestamp difference check
@@ -57,14 +46,24 @@ if (os.time() - tonumber(sign_ts)) > 5 * 60 then
     return verify_fail("The time difference should not be more than 5 minutes")
 end
 
-table.sort(query_table)
-
--- Md5 body
-if ngx.var.http_content_type ~= nil and (string.find(ngx.var.http_content_type, 'json') or string.find(ngx.var.http_content_type, 'www-form-urlencoded')) then
+local function fetch_request_body()
     ngx.req.read_body()
-    local req_body = ngx.req.get_body_data()
-    local body_md5 = ngx.md5(req_body)
-end
+    local body = ngx.req.get_body_data()
+  
+    if not body then
+      -- request body might've been written to tmp file if body > client_body_buffer_size
+      local file_name = ngx.req.get_body_file()
+      local file = io.open(file_name, "rb")
+  
+      if not file then
+        return nil
+      end
+  
+      body = file:read("*all")
+      file:close()
+    end
+    return body
+  end
 
 local secret = secret_table[sign_v]
 
@@ -72,15 +71,24 @@ if secret == nil then
     return verify_fail("Unsupported signature version: " .. sign_v)
 end
 
--- Signature algorithm：base64(hmac_sha1(secrect, uri + sort(query_string) + md5(body)))
-local sign_str = ngx.var.uri
+-- Signature algorithm：base64(hmac_sha1(secrect, method + uri + sort(query) + md5(body)))
+-- Query name and value must use encodeURIComponent
+local sign_str = ngx.var.request_method .. ngx.var.uri
 
-for k, v in ipairs(query_table) do
-    sign_str = sign_str .. v
+local uri_args_keys = {}
+for key, _ in pairs(uri_args) do
+    if key ~= "sign" then
+        table.insert(uri_args_keys, key)
+    end
+end
+table.sort(uri_args_keys)
+for _, key in ipairs(uri_args_keys) do
+    sign_str = sign_str .. key .. "=" .. safe_str(uri_args[key])
 end
 
-if body_md5 ~= nil then
-    sign_str = sign_str .. body_md5
+-- Md5 body
+if ngx.var.http_content_type ~= nil and (string.find(ngx.var.http_content_type, 'json') or string.find(ngx.var.http_content_type, 'www-form-urlencoded')) then
+    sign_str = sign_str .. ngx.md5(fetch_request_body())
 end
 
 local sign_by_server = ngx.encode_base64(ngx.hmac_sha1(secret, sign_str))
