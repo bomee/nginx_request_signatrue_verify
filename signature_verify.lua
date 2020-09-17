@@ -63,7 +63,7 @@ local function fetch_request_body()
       file:close()
     end
     return body
-  end
+end
 
 local secret = secret_table[sign_v]
 
@@ -86,7 +86,7 @@ for _, key in ipairs(uri_args_keys) do
     sign_str = sign_str .. key .. "=" .. safe_str(uri_args[key])
 end
 
--- Md5 body
+-- Md5 Body
 if ngx.var.http_content_type ~= nil and (string.find(ngx.var.http_content_type, 'json') or string.find(ngx.var.http_content_type, 'www-form-urlencoded')) then
     sign_str = sign_str .. ngx.md5(fetch_request_body())
 end
