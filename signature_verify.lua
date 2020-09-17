@@ -54,7 +54,6 @@ if sign == nil or ts == nil or sign_v == nil then
 end
 
 -- Timestamp difference check
-local  = tonumber(ts)
 if (os.time() - tonumber(ts)) > 5 * 60 then
     ngx.log(ngx.WARN, "The time difference should not be more than 5 minutes")
     ngx.status = STATUS_PRECONDITION_REQUIRED
