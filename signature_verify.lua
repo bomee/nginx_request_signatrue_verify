@@ -87,7 +87,9 @@ for _, key in ipairs(uri_args_keys) do
 end
 
 -- Md5 Body
-if ngx.var.http_content_type ~= nil and (string.find(ngx.var.http_content_type, 'json') or string.find(ngx.var.http_content_type, 'www-form-urlencoded')) then
+if ngx.var.http_content_type ~= nil
+    and tonumber(ngx.var.http_content_length) > 0
+    and (string.find(ngx.var.http_content_type, 'json') or string.find(ngx.var.http_content_type, 'www-form-urlencoded')) then
     sign_str = sign_str .. ngx.md5(fetch_request_body())
 end
 
